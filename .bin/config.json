@@ -1,0 +1,12 @@
+{
+    "sketch": "../app.ino",
+    "config": "deviceConnectionString",
+    "provision_iot_hub": true,
+    "provision_azure_function": true,
+    "functionRelativePath": "azureFunction",
+    "functionName": "voice-control",
+    "tasks": {
+        "provision": ["subscription", "iothub", "functionapp", "armtemplatedeployment", "device"],
+        "deploy": ["functiondeploy"]
+    }
+}

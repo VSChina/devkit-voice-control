@@ -1,0 +1,12 @@
+{
+  "bindings": [
+    {
+      "name": "myBlob",
+      "type": "blobTrigger",
+      "direction": "in",
+      "path": "audio/{name}",
+      "connection": "luisstorageblob_STORAGE"
+    }
+  ],
+  "disabled": false
+}
