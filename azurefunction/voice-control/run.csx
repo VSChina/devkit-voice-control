@@ -15,170 +15,189 @@ using NAudio.Wave;
 using Newtonsoft.Json;
 using System.Text.RegularExpressions;
 using System.Linq;
+using System.Configuration;
 
-public static void Run(Stream myBlob, string name, TraceWriter log)
+private static Dictionary<string, int> dic = new Dictionary<string, int>()
 {
-    var connectionString = "HostName=devkit-luis-iot-hub.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=h8SKPsTaSyAUrvrPh5BjRifAjU9wXO4na2OGn29r6nE=";
+    {"one", 1}, {"two", 2}, {"three", 3}, {"four", 4}, {"five", 5}, {"six", 6}, {"seven", 7}, {"eight", 8}, {"nine", 9}
+};
+
+public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceWriter log)
+{
+    byte[] data;
+    try
+    {
+        data = await req.Content.ReadAsByteArrayAsync();
+        if (data.Length == 0)
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest, "Not a valid sound");
+        }
+    }
+    catch (Exception ex)
+    {
+        return req.CreateResponse(HttpStatusCode.BadRequest, ex.Message);
+    }
+
+    var connectionString = ConfigurationManager.AppSettings["iotHubConnectionString"];
     var cloudClient = ServiceClient.CreateFromConnectionString(connectionString);
+
     var speechClient = new SpeechClient("en", "en");
     var textDecoder = TextMessageDecoder.CreateTranslateDecoder();
-    speechClient.OnTextData += (c, a) => { textDecoder.AppendData(a); };
+
+    speechClient.OnTextData += (c, a) =>
+    {
+        textDecoder.AppendData(a);
+    };
+
     speechClient.OnEndOfTextData += (c, a) =>
     {
         textDecoder.AppendData(a);
+
         textDecoder.Decode().ContinueWith(t =>
         {
             var final = t.Result as FinalResultMessage;
+
             if (!t.IsFaulted && final != null)
             {
-                log.Info("Translation: " + final.Translation);
-                var command = ParseIntent(final.Translation, log);
-                log.Info(command);
-                
-                cloudClient.SendAsync("devkit", new Message(Encoding.ASCII.GetBytes(command))).Wait();
-                Task.Factory.StartNew(() => speechClient.Disconnect()).Wait();
+                log.Info("Translation result: " + final.Translation);
+                var intent = ParseIntent(final.Translation, log);
+                log.Info(intent);
+                var c2dTask = Task.Factory.StartNew(() => cloudClient.SendAsync("AZ3166", new Message(Encoding.ASCII.GetBytes(intent))));
+                var disconnectTask = Task.Factory.StartNew(speechClient.Disconnect);
+                Task.WaitAll(c2dTask, disconnectTask);
+                Task.WaitAll(disconnectTask);
             }
         });
     };
 
-    speechClient.Connect().Wait();
-    speechClient.SendMessage(new ArraySegment<byte>(GetWaveHeader())).Wait();
-    using (MemoryStream ms = new MemoryStream())
+    await speechClient.Connect();
+    await speechClient.SendMessage(new ArraySegment<byte>(GetWaveHeader()));
+
+    var audioSource = new AudioSourceCollection(new IAudioSource[]
     {
-        myBlob.CopyTo(ms);
-        var audioSource = new AudioSourceCollection(new IAudioSource[]
-        {
-            new WavFileAudioSource(ms.ToArray()),
-            new WavSilenceAudioSource()
-        });
-        var handle = new AutoResetEvent(true);
-        var audioChunkSizeInMs = 100;
-        var audioChunkSizeInTicks = TimeSpan.TicksPerMillisecond * (long)(audioChunkSizeInMs);
-        var tnext = DateTime.Now.Ticks + audioChunkSizeInMs;
-        var wait = audioChunkSizeInMs;
-        
-        foreach (var chunk in audioSource.Emit(audioChunkSizeInMs))
-        {
-            speechClient.SendMessage(new ArraySegment<byte>(chunk.Array, chunk.Offset, chunk.Count)).Wait();
-            handle.WaitOne(wait);
-            tnext = tnext + audioChunkSizeInTicks;
-            wait = (int)((tnext - DateTime.Now.Ticks) / TimeSpan.TicksPerMillisecond);
-            if (wait < 0) wait = 0;
-        }
-        speechClient.ReceiveMessage().Wait();
+        new WavFileAudioSource(data.ToArray()),
+        new WavSilenceAudioSource()
+    });
+
+    var handle = new AutoResetEvent(true);
+    var audioChunkSizeInMs = 100;
+    var audioChunkSizeInTicks = TimeSpan.TicksPerMillisecond * (long)(audioChunkSizeInMs);
+    var tnext = DateTime.Now.Ticks + audioChunkSizeInMs;
+    var wait = audioChunkSizeInMs;
+
+    foreach (var chunk in audioSource.Emit(audioChunkSizeInMs))
+    {
+        await speechClient.SendMessage(new ArraySegment<byte>(chunk.Array, chunk.Offset, chunk.Count));
+        handle.WaitOne(wait);
+        tnext = tnext + audioChunkSizeInTicks;
+        wait = (int)((tnext - DateTime.Now.Ticks) / TimeSpan.TicksPerMillisecond);
+        if (wait < 0) wait = 0;
     }
+
+    await speechClient.ReceiveMessage();
+
+    return req.CreateResponse(HttpStatusCode.OK, "OK");
 }
 
 private static string ParseIntent(string text, TraceWriter log)
 {
-    string endPoint = "https://westus.api.cognitive.microsoft.com/luis/v2.0/apps/dfe75ca3-b119-46ed-bf5f-4a51f924037e?subscription-key=8d0ef6706f7d4d3296ee7e76b42b1fa8&timezoneOffset=0&verbose=true&q=";
-    Dictionary<string, int> dic = new Dictionary<string, int>()
-    {
-        {"one",1},{"two",2},{"three",3},{"four",4},{"five",5},{"six",6},{"seven",7},{"eight",8},{"nine",9}
-    };
+    string endPoint = $"https://westus.api.cognitive.microsoft.com/luis/v2.0/apps/{ConfigurationManager.AppSettings["LuisAppId"]}"
+                        + $"?subscription-key={ConfigurationManager.AppSettings["cognitiveIntentKey"]}&timezoneOffset=0&verbose=true&q=";
+
     HttpWebRequest request = (HttpWebRequest)WebRequest.Create(endPoint + text);
     HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-    Stream resStream = response.GetResponseStream();
-    StreamReader reader = new StreamReader(resStream);
-    string strResponse = reader.ReadToEnd();
-    dynamic result = JsonConvert.DeserializeObject(strResponse);
+    Stream stream = response.GetResponseStream();
+    StreamReader reader = new StreamReader(stream);
+    dynamic result = JsonConvert.DeserializeObject(reader.ReadToEnd());
+
     if (result.topScoringIntent != null)
     {
         var intent = result.topScoringIntent.intent.ToString();
-        Console.WriteLine("Intent:" + intent);
-        log.Info("Intent:" + intent);
-        if (intent == "SwitchLight")
-        {
-            if (result.entities.Count != 0)
-            {
-                var entity = result.entities[0].entity.ToString();
-                if (entity == "off")
-                {
-                    Console.WriteLine("Command: Turn off the light");
-                    log.Info("Command: Turn off the light");
-                    return "light:off";
-                }
 
-                if (entity == "on")
-                {
-                    Console.WriteLine("Command: Turn on the light");
-                    log.Info("Command: Turn on the light");
-                    return "light:on";
-                }
-            }
-            Console.WriteLine("Cannot parse this command");
-            log.Info("Cannot parse this command");
-            return "None";
-
-        }
-        if (intent == "Blink")
+        switch (intent)
         {
-            if (result.entities.Count != 0)
-            {
-                var entity = result.entities[0].entity.ToString();
-                int num;
-                if (int.TryParse(entity, out num))
+            case "SwitchLight":
+                if (result.entities.Count != 0)
                 {
-                    Console.WriteLine($"Blink the light {num} times");
-                    return "blink:" + num;
-                }
-                else
-                {
-                    try
+                    var entity = result.entities[0].entity.ToString();
+                    if (entity == "off")
                     {
-                        return "blink:" + dic[entity];
+                        return "light:off";
                     }
-                    catch (Exception)
+
+                    if (entity == "on")
                     {
-                        //ignore
+                        return "light:on";
                     }
                 }
-            }
-
-            Console.WriteLine("Cannot parse Blink intent");
-            return "None";
-        }
-        if (intent == "Display")
-        {
-            string str = result.query.ToString();
-            str = Regex.Replace(str, "display ", "", RegexOptions.IgnoreCase);
-            Console.WriteLine("Display:" + str);
-            if (str.Length > 50)
-            {
-                str = str.Substring(0, 50);
-            }
-            return "display:" + str;
-        }
-        if (intent == "Sensor")
-        {
-            if (result.entities.Count != 0)
-            {
-                var entity = result.entities[0].entity.ToString();
-                if (entity == "temperature" || entity == "humidity")
-                {
-                    return "sensor:humidtemp";
-                }
-                if (entity == "motion")
-                {
-                    return "sensor:motiongyro";
-                }
-                if (entity == "magnetic")
-                {
-                    return "sensor:magnetic";
-                }
-                if (entity == "pressure")
-                {
-                    return "sensor:pressure";
-                }
-                Console.WriteLine("Cannot parse sensor:" + entity);
+                log.Info("Cannot parse switch light intent");
                 return "None";
-            }
 
-            Console.WriteLine("Cannot parse Sensor intent");
-            return "None";
+            case "Blink":
+                if (result.entities.Count != 0)
+                {
+                    var entity = result.entities[0].entity.ToString();
+                    int num;
+                    if (int.TryParse(entity, out num))
+                    {
+                        return "blink:" + num;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            return "blink:" + dic[entity];
+                        }
+                        catch (Exception)
+                        {
+                            log.Info("Cannot parse blink times");
+                        }
+                    }
+                }
+                return "None";
+
+            case "Display":
+                var str = result.query.ToString();
+                str = Regex.Replace(str, "display ", "", RegexOptions.IgnoreCase);
+
+                if (str.Length > 50)
+                {
+                    str = str.Substring(0, 50);
+                }
+
+                return "display:" + str;
+
+            case "Sensor":
+                if (result.entities.Count != 0)
+                {
+                    var entity = result.entities[0].entity.ToString();
+                    log.Info("Sensor: " + entity);
+                    if (entity == "temperature" || entity == "humidity")
+                    {
+                        return "sensor:humidtemp";
+                    }
+                    else if (entity == "motion")
+                    {
+                        return "sensor:motiongyro";
+                    }
+                    else if (entity == "magnetic")
+                    {
+                        return "sensor:magnetic";
+                    }
+                    else if (entity == "pressure")
+                    {
+                        return "sensor:pressure";
+                    }
+					else
+					{
+						log.Info("Cannot parse sensor intent");
+						return "None";
+					}
+                }
+                return "None";
         }
     }
-    Console.WriteLine("Cannot parse user intent");
+    log.Info("Cannot parse user intent");
     return "None";
 }
 
@@ -256,10 +275,10 @@ public class SpeechClient
     private readonly Uri _clientWsUri;
     private const string HostName = "dev.microsofttranslator.com";
     private const int ReceiveChunkSize = 8 * 1024;
-    private const string SubscriptionKey = "7d09a0cc88ae469cbb0073472e756f98";
+    private string SubscriptionKey = ConfigurationManager.AppSettings["cognitiveSpeechKey"];
     public event EventHandler<ArraySegment<byte>> OnTextData;
     public event EventHandler<ArraySegment<byte>> OnEndOfTextData;
-    
+
     public SpeechClient(string source, string target)
     {
         var auth = new AzureAuthToken(SubscriptionKey);
@@ -299,7 +318,7 @@ public class SpeechClient
 
     public async Task SendMessage(ArraySegment<byte> content)
     {
-       await _webSocketClient.SendAsync(content, WebSocketMessageType.Binary, true, CancellationToken.None);
+        await _webSocketClient.SendAsync(content, WebSocketMessageType.Binary, true, CancellationToken.None);
     }
 
     public async Task ReceiveMessage()
@@ -369,14 +388,15 @@ public class TextMessageDecoder
     {
         var ms = Interlocked.Exchange(ref this.buffer, new MemoryStream());
         ms.Position = 0;
-        return Task.Run(() => {
+        return Task.Run(() =>
+        {
             object msg = null;
             using (var reader = new StreamReader(ms, Encoding.UTF8))
             {
                 var json = reader.ReadToEnd();
                 var result = JsonConvert.DeserializeObject<ResultType>(json);
                 var msgType = result.MessageType.ToLower();
-                if (msgType != "final" && msgType !="partial")
+                if (msgType != "final" && msgType != "partial")
                 {
                     throw new InvalidOperationException($"Invalid text message: type='{msgType}'.");
                 }
