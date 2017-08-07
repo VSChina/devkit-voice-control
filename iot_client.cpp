@@ -131,6 +131,7 @@ int iot_client_blob_upload_step1(const char *blobName)
     }
 
     sprintf(temp, BLOB_REQUEST_ENDPOINT, hostNameString, deviceIdString, blobName);
+    Serial.printf("blob:%s\n",temp);
     HTTPClient blobRequest = HTTPClient(HTTP_GET, temp);
     blobRequest.set_header("Authorization", current_token);
     blobRequest.set_header("Accept", "application/json");
@@ -189,6 +190,7 @@ int iot_client_blob_upload_step2(const char *content, int length)
         Serial.println("Uri to get sas token is null");
         return -1;
     }
+    Serial.printf("blob:%s\n",sasUri);
     HTTPClient uploadRequest = HTTPClient(HTTP_PUT, sasUri);
     uploadRequest.set_header("x-ms-blob-type", "BlockBlob");
     const Http_Response *response = uploadRequest.send(content, length);
