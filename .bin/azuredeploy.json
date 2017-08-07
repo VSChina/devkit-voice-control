@@ -32,10 +32,11 @@
         }
     },
     "variables": {
-        "cognitiveServiceName": "[concat('cognitiveService', uniquestring(resourceGroup().id))]"
+        "cognitiveServiceSpeechName": "[concat('cognitiveServiceSpeech', uniquestring(resourceGroup().id))]",
+        "cognitiveServiceIntentName": "[concat('cognitiveServiceIntent', uniquestring(resourceGroup().id))]"
     },
     "resources": [{
-            "name": "[variables('cognitiveServiceName')]",
+            "name": "[variables('cognitiveServiceSpeechName')]",
             "type": "Microsoft.CognitiveServices/accounts",
             "sku": {
                 "name": "S1"
@@ -45,6 +46,18 @@
             "location": "global",
             "tags": {},
             "properties": {}
+        },
+        {
+            "name": "[variables('cognitiveServiceIntentName')]",
+            "type": "Microsoft.CognitiveServices/accounts",
+            "sku": {
+                "name": "S0"
+            },
+            "kind": "LUIS",
+            "apiVersion": "2016-02-01-preview",
+            "location": "westus",
+            "properties": {},
+            "dependsOn": []
         },
         {
             "apiVersion": "2017-05-10",
@@ -90,9 +103,18 @@
                                 "name": "eventHubConnectionPath",
                                 "value": "[reference('iothubTemplate').outputs.eventHubConnectionPath.value]"
                             },
+
                             {
-                                "name": "subscriptionKey",
-                                "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveServiceName')), '2017-04-18').key1]"
+                                "name": "cognitiveSpeechKey",
+                                "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveServiceSpeechName')), '2017-04-18').key1]"
+                            },
+                            {
+                                "name": "cognitiveIntentKey",
+                                "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveServiceIntentName')), '2017-04-18').key1]"
+                            },
+                            {
+                                "name": "LuisAppId",
+                                "value": "YOUR LUIS APP ID"
                             }
                         ]
                     }
@@ -103,8 +125,9 @@
                 }
             },
             "dependsOn": [
-                "[resourceId('Microsoft.Resources/deployments', 'iothubTemplate')]",
-                "[resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveServiceName'))]"
+                "[resourceId('Microsoft.Resources/deployments',  'iothubTemplate')]",
+                "[resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveServiceSpeechName'))]",
+                "[resourceId('Microsoft.CognitiveServices/accounts', variables('cognitiveServiceIntentName'))]"
             ]
         }
     ]
