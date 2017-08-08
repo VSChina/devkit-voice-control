@@ -23,12 +23,12 @@ private static Dictionary<string, int> numDic = new Dictionary<string, int>()
 };
 
 private static Dictionary<string, string> sensorDic = new Dictionary<string, string>(){
-	{"temperature", "sensor:humidtemp"}, {"humidity", "sensor:humidtemp"}, {"motion", "sensor:motiongyro"},
-	{"magnetic", "sensor:magnetic"}, {"pressure", "sensor:pressure"}
+    {"temperature", "sensor:humidtemp"}, {"humidity", "sensor:humidtemp"}, {"motion", "sensor:motiongyro"},
+    {"magnetic", "sensor:magnetic"}, {"pressure", "sensor:pressure"}
 };
 
 private static Dictionary<string, string> lightDic = new Dictionary<string, string>(){
-	{"on", "light:on"}, {"off", "light:off"}
+    {"on", "light:on"}, {"off", "light:off"}
 };
 
 
@@ -76,7 +76,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                var disconnectTask = Task.Factory.StartNew(speechClient.Disconnect);
                await c2dTask;
                await disconnectTask;
-            }
+           }
        });
     };
 
@@ -130,10 +130,10 @@ private static string ParseIntent(string text, TraceWriter log)
                 if (result.entities.Count != 0)
                 {
                     var entity = result.entities[0].entity.ToString();
-					if(lightDic.ContainsKey(entity))
-					{
-						return lightDic[entity];
-					}
+                    if (lightDic.ContainsKey(entity))
+                    {
+                        return lightDic[entity];
+                    }
                 }
                 log.Info("Cannot parse switch light intent");
                 return "None";
@@ -149,10 +149,10 @@ private static string ParseIntent(string text, TraceWriter log)
                     }
                     else
                     {
-						if(numDic.ContainsKey(entity))
-						{
-							return "blink:" + numDic[entity];
-						}
+                        if (numDic.ContainsKey(entity))
+                        {
+                            return "blink:" + numDic[entity];
+                        }
                         log.Info("Cannot parse blink times");
                     }
                 }
@@ -174,10 +174,10 @@ private static string ParseIntent(string text, TraceWriter log)
                 {
                     var entity = result.entities[0].entity.ToString();
                     log.Info("Sensor: " + entity);
-					if (sensorDic.ContainsKey(entity))
-					{
-						return sensorDic[entity];
-					}
+                    if (sensorDic.ContainsKey(entity))
+                    {
+                        return sensorDic[entity];
+                    }
                     else
                     {
                         log.Info("Cannot parse sensor intent");
