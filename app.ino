@@ -18,7 +18,6 @@ static const char* FUNCTION_URL = "http://%s.azurewebsites.net/api/voice-control
 static boolean hasWifi = false;
 static char *waveFile = NULL;
 static int wavFileSize;
-static bool translated = false;
 static AudioClass& Audio = AudioClass::getInstance();
 static char azureFunctionUri[128];
 
@@ -397,17 +396,11 @@ void loop()
         freeWavFile();
         break;
     case Uploaded:
-        Serial.println("start get c2d");
         char *etag = (char *)malloc(40);
-        Serial.println(etag);
         const char *p = iot_client_get_c2d_message(etag);
-        Serial.println(etag);
-        Serial.print("finish get c2d\n");
         if (p != NULL)
         {
-            Serial.print("start delete c2d\n");
             complete_c2d_message((char *)etag);
-            Serial.print("finish delete c2d\n");
             if (strlen(p) != 0)
             {
                 Serial.printf("received %s\n", p);
@@ -460,7 +453,6 @@ void loop()
                     display("Invalid command");
                     updateSensorIndicator = 0;
                 }
-                translated = true;
                 enterIdleState();
                 // Screen.print(0, "Hold B to talk");
             }
