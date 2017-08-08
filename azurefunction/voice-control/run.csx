@@ -1,4 +1,4 @@
-#r "System.Runtime.Serialization"
+﻿#r "System.Runtime.Serialization"
 
 using System;
 using System.Collections.Generic;
@@ -17,10 +17,20 @@ using System.Text.RegularExpressions;
 using System.Linq;
 using System.Configuration;
 
-private static Dictionary<string, int> dic = new Dictionary<string, int>()
+private static Dictionary<string, int> numDic = new Dictionary<string, int>()
 {
     {"one", 1}, {"two", 2}, {"three", 3}, {"four", 4}, {"five", 5}, {"six", 6}, {"seven", 7}, {"eight", 8}, {"nine", 9}
 };
+
+private static Dictionary<string, string> sensorDic = new Dictionary<string, string>(){
+	{"temperature", "sensor:humidtemp"}, {"humidity", "sensor:humidtemp"}, {"motion", "sensor:motiongyro"},
+	{"magnetic", "sensor:magnetic"}, {"pressure", "sensor:pressure"}
+};
+
+private static Dictionary<string, string> lightDic = new Dictionary<string, string>(){
+	{"on", "light:on"}, {"off", "light:off"}
+};
+
 
 public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceWriter log)
 {
@@ -41,7 +51,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
     var connectionString = ConfigurationManager.AppSettings["iotHubConnectionString"];
     var cloudClient = ServiceClient.CreateFromConnectionString(connectionString);
 
-    var speechClient = new SpeechClient("en", "en");
+    var speechClient = new SpeechClient();
     var textDecoder = TextMessageDecoder.CreateTranslateDecoder();
 
     speechClient.OnTextData += (c, a) =>
@@ -53,21 +63,21 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
     {
         textDecoder.AppendData(a);
 
-        textDecoder.Decode().ContinueWith(t =>
-        {
-            var final = t.Result as FinalResultMessage;
+        textDecoder.Decode().ContinueWith(async t =>
+       {
+           var final = t.Result as FinalResultMessage;
 
-            if (!t.IsFaulted && final != null)
-            {
-                log.Info("Translation result: " + final.Translation);
-                var intent = ParseIntent(final.Translation, log);
-                log.Info(intent);
-                var c2dTask = Task.Factory.StartNew(() => cloudClient.SendAsync("AZ3166", new Message(Encoding.ASCII.GetBytes(intent))));
-                var disconnectTask = Task.Factory.StartNew(speechClient.Disconnect);
-                Task.WaitAll(c2dTask, disconnectTask);
-                Task.WaitAll(disconnectTask);
+           if (!t.IsFaulted && final != null)
+           {
+               log.Info("Translation result: " + final.Translation);
+               var intent = ParseIntent(final.Translation, log);
+               log.Info(intent);
+               var c2dTask = Task.Factory.StartNew(() => cloudClient.SendAsync("AZ3166", new Message(Encoding.ASCII.GetBytes(intent))));
+               var disconnectTask = Task.Factory.StartNew(speechClient.Disconnect);
+               await c2dTask;
+               await disconnectTask;
             }
-        });
+       });
     };
 
     await speechClient.Connect();
@@ -120,15 +130,10 @@ private static string ParseIntent(string text, TraceWriter log)
                 if (result.entities.Count != 0)
                 {
                     var entity = result.entities[0].entity.ToString();
-                    if (entity == "off")
-                    {
-                        return "light:off";
-                    }
-
-                    if (entity == "on")
-                    {
-                        return "light:on";
-                    }
+					if(lightDic.ContainsKey(entity))
+					{
+						return lightDic[entity];
+					}
                 }
                 log.Info("Cannot parse switch light intent");
                 return "None";
@@ -144,14 +149,11 @@ private static string ParseIntent(string text, TraceWriter log)
                     }
                     else
                     {
-                        try
-                        {
-                            return "blink:" + dic[entity];
-                        }
-                        catch (Exception)
-                        {
-                            log.Info("Cannot parse blink times");
-                        }
+						if(numDic.ContainsKey(entity))
+						{
+							return "blink:" + numDic[entity];
+						}
+                        log.Info("Cannot parse blink times");
                     }
                 }
                 return "None";
@@ -172,27 +174,15 @@ private static string ParseIntent(string text, TraceWriter log)
                 {
                     var entity = result.entities[0].entity.ToString();
                     log.Info("Sensor: " + entity);
-                    if (entity == "temperature" || entity == "humidity")
-                    {
-                        return "sensor:humidtemp";
-                    }
-                    else if (entity == "motion")
-                    {
-                        return "sensor:motiongyro";
-                    }
-                    else if (entity == "magnetic")
-                    {
-                        return "sensor:magnetic";
-                    }
-                    else if (entity == "pressure")
-                    {
-                        return "sensor:pressure";
-                    }
-					else
+					if (sensorDic.ContainsKey(entity))
 					{
-						log.Info("Cannot parse sensor intent");
-						return "None";
+						return sensorDic[entity];
 					}
+                    else
+                    {
+                        log.Info("Cannot parse sensor intent");
+                        return "None";
+                    }
                 }
                 return "None";
         }
@@ -279,14 +269,14 @@ public class SpeechClient
     public event EventHandler<ArraySegment<byte>> OnTextData;
     public event EventHandler<ArraySegment<byte>> OnEndOfTextData;
 
-    public SpeechClient(string source, string target)
+    public SpeechClient()
     {
         var auth = new AzureAuthToken(SubscriptionKey);
         this._webSocketClient = new ClientWebSocket();
         _webSocketClient.Options.SetRequestHeader("Authorization", auth.GetAccessTokenAsync().Result);
         _webSocketClient.Options.SetRequestHeader("X-ClientAppId", "ea66703d-90a8-436b-9bd6-7a2707a2ad99");
         _webSocketClient.Options.SetRequestHeader("X-CorrelationId", "440B2DA4");
-        this._clientWsUri = new Uri($"wss://{HostName}/speech/translate?from={source}&to={target}&features=Partial&profanity=Strict&api-version=1.0");
+        this._clientWsUri = new Uri($"wss://{HostName}/speech/translate?from=en&to=en&features=Partial&profanity=Strict&api-version=1.0");
     }
 
     public async Task Connect()
