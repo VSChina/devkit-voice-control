@@ -294,9 +294,13 @@ void setup()
     pressureSensor->init(NULL);
 
     hasWifi = false;
-    initWifi();
-    if (!hasWifi)
+    if (WiFi.begin() == WL_CONNECTED)
     {
+        hasWifi = true;
+    }
+    else
+    {
+        Screen.print(1, "No Wi-Fi");
         return;
     }
     enterIdleState();
@@ -321,6 +325,7 @@ void loop()
 {
     if (!hasWifi)
     {
+        delay(3000);
         return;
     }
 

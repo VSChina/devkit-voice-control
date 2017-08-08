@@ -1,1 +1,1 @@
-#define AZURE_FUNCTION_APP_NAME "devkit-luis-iot-hub-shake503c"
+#define AZURE_FUNCTION_APP_NAME ""
