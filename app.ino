@@ -13,12 +13,12 @@
 static const int RECORD_DURATION = 3;
 static const int AUDIO_SIZE = ((32000 * RECORD_DURATION) + 44);
 static const uint32_t DELAY_TIME = 1000;
-static const char* FUNCTION_URL = "http://%s.azurewebsites.net/api/voice-control";
+static const char *FUNCTION_URL = "http://%s.azurewebsites.net/api/voice-control";
 
 static boolean hasWifi = false;
 static char *waveFile = NULL;
 static int wavFileSize;
-static AudioClass& Audio = AudioClass::getInstance();
+static AudioClass &Audio = AudioClass::getInstance();
 static char azureFunctionUri[128];
 
 enum STATUS
@@ -163,7 +163,7 @@ static int postToFunction(const char *content, int length)
         Serial.println("Content not valid");
         return -1;
     }
-    Serial.printf("Function url:%s\n",azureFunctionUri);
+    Serial.printf("Function url:%s\n", azureFunctionUri);
     HTTPClient client = HTTPClient(HTTP_POST, azureFunctionUri);
     const Http_Response *response = client.send(content, length);
     Serial.println(response->status_code);
@@ -295,6 +295,10 @@ void setup()
 
     hasWifi = false;
     initWifi();
+    if (!hasWifi)
+    {
+        return;
+    }
     enterIdleState();
     EEPROMInterface eeprom;
     uint8_t connString[AZ_IOT_HUB_MAX_LEN + 1] = {'\0'};
@@ -339,7 +343,9 @@ void loop()
             status = Recorded;
             Screen.clean();
             Screen.print(0, "Release B to send\r\nMax duraion: 3 sec");
-        }else {
+        }
+        else
+        {
             updateSensor();
         }
         break;
@@ -387,7 +393,6 @@ void loop()
                 enterIdleState();
                 Screen.print(2, "azure function failed", true);
             }
-            
         }
         else
         {
